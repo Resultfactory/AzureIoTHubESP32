@@ -1,4 +1,7 @@
+#ifdef __cplusplus
 extern "C" {
+#endif
+
 #include "esp_log.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
@@ -11,26 +14,22 @@ extern "C" {
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef __cplusplus
 }
+#endif
 #include "WiFiClientSecure.h"
 
 static const char *wcs = "WiFiClientSecure";
 
 uint8_t WiFiClientSecure::idCount = 0;
 
-uint8_t WiFiClientSecure::GetID(void) { return id; }
-
-WiFiClientSecure::WiFiClientSecure(bool block)
-{
-	WiFiClientSecure();
-	blocking = block;
-}
-
 WiFiClientSecure::WiFiClientSecure()
 {
 	id = idCount;
 	idCount++;
 
+	// AddressInformation defaults
 	memset(&ai, 0, sizeof(ai));
 	ai.family = AF_INET;
 	ai.socktype = SOCK_STREAM;
@@ -45,14 +44,11 @@ WiFiClientSecure::WiFiClientSecure()
 	strcpy(TAGID, wcs);
 	strcat(TAGID, ids);
 	ESP_LOGD(TAGID, "ID: %d", id);
-
-	blocking = false;
 }
 
-WiFiClientSecure::~WiFiClientSecure()
+uint8_t WiFiClientSecure::GetID(void)
 {
-	Stop();
-	free(TAGID);
+	return id;
 }
 
 void WiFiClientSecure::Init(void)
@@ -106,9 +102,101 @@ int WiFiClientSecure::SSLHandshake(void)
 	return ret;
 }
 
+int WiFiClientSecure::ConnectTo(const char *name, uint16_t port)
+{
+	int ret = 0;
+
+	if ((ret = mbedtls_ctr_drbg_seed(&_ctr_drbg, mbedtls_entropy_func, &_entropy, NULL, 0)) == 0)
+	{
+		int flags;
+
+		ESP_LOGV(TAGID, "mbedtls_ctr_drbg_seed");
+		// ESP_LOGI(TAGID, "ROOTCERT (%d) %s", strlen(ROOTCERT), ROOTCERT);
+		// if ((ret = mbedtls_x509_crt_parse(&_cacert, (const unsigned char
+		// *)ROOTCERT, strlen(ROOTCERT))) == 0)
+		//{
+
+		ESP_LOGI(TAGID, "Setting hostname for TLS session: %s", name);
+		/* Hostname set here should match CN in server certificate */
+		if ((ret = mbedtls_ssl_set_hostname(&_ssl, name)) == 0)
+		{
+			ESP_LOGI(TAGID, "Setting up the SSL/TLS structure...");
+
+			if ((ret = mbedtls_ssl_config_defaults(
+				&_config, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM,
+				MBEDTLS_SSL_PRESET_DEFAULT)) == 0)
+			{
+				// MBEDTLS_SSL_VERIFY_OPTIONAL is bad for security, in this example it will print
+				// a warning if CA verification fails but it will continue to
+				// connect.
+				// You should consider using MBEDTLS_SSL_VERIFY_REQUIRED in your
+				// own code.
+				mbedtls_ssl_conf_authmode(&_config, MBEDTLS_SSL_VERIFY_OPTIONAL);
+				mbedtls_ssl_conf_ca_chain(&_config, &_cacert, NULL);
+				mbedtls_ssl_conf_rng(&_config, mbedtls_ctr_drbg_random, &_ctr_drbg);
+				if (readTimeout > 0)
+					mbedtls_ssl_conf_read_timeout(&_config, readTimeout);
+
+				if ((ret = mbedtls_ssl_setup(&_ssl, &_config)) == 0)
+				{
+					mbedtls_net_init(&_server_fd);
+
+					char portString[10];
+					itoa(port, portString, 10);
+					ESP_LOGI(TAGID, "Connecting to %s:%s...", name, portString);
+					if ((ret = NetConnect(&_server_fd, name, portString, MBEDTLS_NET_PROTO_TCP)) == 0) // mbedtls_net_connect sets up
+					{
+						ESP_LOGI(TAGID, "Connected");
+
+						mbedtls_net_set_nonblock(&_server_fd);
+						mbedtls_ssl_set_bio(&_ssl, &_server_fd, mbedtls_net_send, mbedtls_net_recv, NULL);
+
+						ESP_LOGI(TAGID, "Performing the SSL/TLS handshake...");
+						if ((ret = SSLHandshake()) == 0)
+						{
+							ESP_LOGI(TAGID, "Verifying peer X.509 certificate...");
+							if ((flags = mbedtls_ssl_get_verify_result(&_ssl)) != 0)
+							{
+								// In real life, we probably want to close connection if ret != 0
+								ESP_LOGW(TAGID, "Failed to verify peer certificate");
+								//								bzero(info,
+								// sizeof(info));
+								//								mbedtls_x509_crt_verify_info(info,
+								// sizeof(info), "", flags);
+								//								ESP_LOGW(TAGID,
+								//"%s", info);
+							}
+							else
+								ESP_LOGI(TAGID, "Certificate verified");
+						}
+					}
+					else
+						ESP_LOGE(TAGID, "mbedtls_net_connect returned -%x", -ret);
+				}
+				else
+					ESP_LOGE(TAGID, "mbedtls_ssl_setup returned -0x%x\n\n", -ret);
+			}
+			else
+				ESP_LOGE(TAGID, "mbedtls_ssl_config_defaults returned %d", ret);
+		}
+		else
+			ESP_LOGE(TAGID, "mbedtls_ssl_set_hostname returned -0x%x", -ret);
+		//}
+		// else
+		//	ESP_LOGE(TAGID, "mbedtls_x509_crt_parse returned -0x%x", -ret);
+	}
+	else
+		ESP_LOGE(TAGID, "mbedtls_ctr_drbg_seed returned %d", ret);
+
+	return ret;
+}
+
 int WiFiClientSecure::ConnectTo(ip4_addr *ip, uint16_t port)
 {
 	int ret = 0;
+
+	// Init();
+	// Moved init to function, hostbyname saves hostname in _ssl
 
 	if ((ret = mbedtls_ctr_drbg_seed(&_ctr_drbg, mbedtls_entropy_func, &_entropy, NULL, 0)) == 0)
 	{
@@ -127,13 +215,12 @@ int WiFiClientSecure::ConnectTo(ip4_addr *ip, uint16_t port)
 				&_config, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM,
 				MBEDTLS_SSL_PRESET_DEFAULT)) == 0)
 			{
-				/* MBEDTLS_SSL_VERIFY_OPTIONAL is bad for security, in this example it
-		   will print
-				a warning if CA verification fails but it will continue to
-		   connect.
-				You should consider using MBEDTLS_SSL_VERIFY_REQUIRED in your
-		   own code.
-*/
+				// MBEDTLS_SSL_VERIFY_OPTIONAL is bad for security, in this example it
+				// will print
+				// a warning if CA verification fails but it will continue to
+				// connect.
+				// You should consider using MBEDTLS_SSL_VERIFY_REQUIRED in your
+				// own code.
 				mbedtls_ssl_conf_authmode(&_config, MBEDTLS_SSL_VERIFY_OPTIONAL);
 				mbedtls_ssl_conf_ca_chain(&_config, &_cacert, NULL);
 				mbedtls_ssl_conf_rng(&_config, mbedtls_ctr_drbg_random, &_ctr_drbg);
@@ -149,14 +236,7 @@ int WiFiClientSecure::ConnectTo(ip4_addr *ip, uint16_t port)
 					{
 						ESP_LOGI(TAGID, "Connected");
 
-						// Set blocking I/O mode so we can read in a loop without timeout
-						// waiting for the last block.
-						// Also this prevents getting back the response of the previous call
-						if (blocking)
-							mbedtls_net_set_block(&_server_fd);
-						else
-							mbedtls_net_set_nonblock(&_server_fd);
-
+						mbedtls_net_set_nonblock(&_server_fd);
 						mbedtls_ssl_set_bio(&_ssl, &_server_fd, mbedtls_net_send, mbedtls_net_recv, NULL);
 
 						ESP_LOGI(TAGID, "Performing the SSL/TLS handshake...");
@@ -209,18 +289,71 @@ void WiFiClientSecure::SetTimeout(unsigned long timeout)
 	mbedtls_ssl_conf_read_timeout(&_config, (readTimeout = timeout));
 }
 
-int WiFiClientSecure::NetConnect(mbedtls_net_context *ctx, ip4_addr *host,
-								 uint16_t port, int proto)
+int WiFiClientSecure::NetConnect(mbedtls_net_context *ctx, const char *host, const char *port, int proto)
+{
+	int ret;
+	struct addrinfo hints, *addr_list, *cur;
+
+	// Does Nothing! see mbedtls/port/net.c:77
+	//	if ((ret = net_prepare()) != 0) {
+	//		return (ret);
+	//	}
+
+	/* Do name resolution with both IPv6 and IPv4 */
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = proto == MBEDTLS_NET_PROTO_UDP ? SOCK_DGRAM : SOCK_STREAM;
+	hints.ai_protocol = proto == MBEDTLS_NET_PROTO_UDP ? IPPROTO_UDP : IPPROTO_TCP;
+
+	if (getaddrinfo(host, port, &hints, &addr_list) != 0)
+	{
+		return MBEDTLS_ERR_NET_UNKNOWN_HOST;
+	}
+
+	/* Try the sockaddrs until a connection succeeds */
+	ret = MBEDTLS_ERR_NET_UNKNOWN_HOST;
+	for (cur = addr_list; cur != NULL; cur = cur->ai_next)
+	{
+		ctx->fd = (int)socket(cur->ai_family, cur->ai_socktype, cur->ai_protocol);
+		if (ctx->fd < 0)
+		{
+			ret = MBEDTLS_ERR_NET_SOCKET_FAILED;
+			continue;
+		}
+
+		// save socket information
+		ai.family = cur->ai_family;
+		ai.socktype = cur->ai_socktype;
+		ai.protocol = cur->ai_protocol;
+
+		if (connect(ctx->fd, cur->ai_addr, cur->ai_addrlen) == 0)
+		{
+			// save address
+			ai.addr = *cur->ai_addr;
+			ai.addrlen = cur->ai_addrlen;
+			ret = 0;
+			break;
+		}
+
+		close(ctx->fd);
+		ret = MBEDTLS_ERR_NET_CONNECT_FAILED;
+	}
+
+	freeaddrinfo(addr_list);
+
+	return ret;
+}
+
+int WiFiClientSecure::NetConnect(mbedtls_net_context *ctx, ip4_addr *host, uint16_t port, int proto)
 {
 	int ret;
 
 	ctx->fd = (int)socket(ai.family, ai.socktype, ai.protocol);
 	if (ctx->fd < 0)
-	{
-		return (ret = MBEDTLS_ERR_NET_SOCKET_FAILED);
-	}
+		return MBEDTLS_ERR_NET_SOCKET_FAILED;
 
 	struct sockaddr_in sock_addr;
+
 	memset(&sock_addr, 0, sizeof(sock_addr));
 	sock_addr.sin_family = AF_INET;
 	sock_addr.sin_addr.s_addr = 0;
@@ -234,21 +367,17 @@ int WiFiClientSecure::NetConnect(mbedtls_net_context *ctx, ip4_addr *host,
 	sock_addr.sin_port = htons(port);
 
 	if (connect(ctx->fd, (struct sockaddr *)&sock_addr, sizeof(sock_addr)) == 0)
-	{
-		ret = 0;
-		return (ret);
-	}
+		return 0;
+
 	ESP_LOGV(TAGID, "AddressInformation: fam: %d, sock: %d, proto: %d, addrlen: %d",
-		ai.family, 
-		ai.socktype, 
-		ai.protocol, 
+		ai.family,
+		ai.socktype,
+		ai.protocol,
 		ai.addrlen);
 
 	close(ctx->fd);
 
-	ret = MBEDTLS_ERR_NET_CONNECT_FAILED;
-
-	return ret;
+	return MBEDTLS_ERR_NET_CONNECT_FAILED;
 }
 
 uint8_t WiFiClientSecure::Connected()
@@ -266,7 +395,7 @@ void WiFiClientSecure::Stop(void)
 	mbedtls_ssl_config_free(&_config);
 	mbedtls_ctr_drbg_free(&_ctr_drbg);
 	mbedtls_entropy_free(&_entropy);
-	
+	// ?????
 	Init();
 }
 
@@ -299,7 +428,9 @@ int WiFiClientSecure::SSLRead(uint8_t *buf, size_t size)
 
 int WiFiClientSecure::Available(void)
 {
-	int read, pend;
+	int read,
+		pend;
+
 	read = SSLRead(NULL, 0);
 	pend = mbedtls_ssl_get_bytes_avail(&_ssl);
 	ESP_LOGV(TAGID, "read %d, has pending: %d, state %d", read, pend, _ssl.state);
@@ -332,7 +463,7 @@ void WiFiClientSecure::DebugPrint(void *ctx, int level, const char *file, int li
 		case 4:
 			ESP_LOGV(wcs, "%s:%d %s", file, line, str);
 			break;
-	
+
 		default:
 			ESP_LOGE(wcs, "Unexpected log level %d: %s", level, str);
 			break;
@@ -351,4 +482,10 @@ void WiFiClientSecure::Debug(uint8_t level)
 		mbedtls_debug_set_threshold(0);
 		mbedtls_ssl_conf_dbg(&_config, NULL, NULL);
 	}
+}
+
+WiFiClientSecure::~WiFiClientSecure()
+{
+	Stop();
+	free(TAGID);
 }

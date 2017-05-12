@@ -30,6 +30,7 @@ class WiFiClientSecure
 	WiFiClientSecure();
 	~WiFiClientSecure();
 
+	int ConnectTo(const char *name, uint16_t port);
 	int ConnectTo(ip4_addr *ip, uint16_t port);
 	void SetTimeout(unsigned long timeout);
 	uint8_t Connected();
