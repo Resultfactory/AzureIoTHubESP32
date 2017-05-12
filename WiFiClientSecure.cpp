@@ -123,8 +123,8 @@ int WiFiClientSecure::ConnectTo(const char *name, uint16_t port)
 			ESP_LOGI(TAGID, "Setting up the SSL/TLS structure...");
 
 			if ((ret = mbedtls_ssl_config_defaults(
-				&_config, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM,
-				MBEDTLS_SSL_PRESET_DEFAULT)) == 0)
+					 &_config, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM,
+					 MBEDTLS_SSL_PRESET_DEFAULT)) == 0)
 			{
 				// MBEDTLS_SSL_VERIFY_OPTIONAL is bad for security, in this example it will print
 				// a warning if CA verification fails but it will continue to
@@ -212,8 +212,8 @@ int WiFiClientSecure::ConnectTo(ip4_addr *ip, uint16_t port)
 			ESP_LOGI(TAGID, "Setting up the SSL/TLS structure...");
 
 			if ((ret = mbedtls_ssl_config_defaults(
-				&_config, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM,
-				MBEDTLS_SSL_PRESET_DEFAULT)) == 0)
+					 &_config, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM,
+					 MBEDTLS_SSL_PRESET_DEFAULT)) == 0)
 			{
 				// MBEDTLS_SSL_VERIFY_OPTIONAL is bad for security, in this example it
 				// will print
@@ -370,10 +370,10 @@ int WiFiClientSecure::NetConnect(mbedtls_net_context *ctx, ip4_addr *host, uint1
 		return 0;
 
 	ESP_LOGV(TAGID, "AddressInformation: fam: %d, sock: %d, proto: %d, addrlen: %d",
-		ai.family,
-		ai.socktype,
-		ai.protocol,
-		ai.addrlen);
+			 ai.family,
+			 ai.socktype,
+			 ai.protocol,
+			 ai.addrlen);
 
 	close(ctx->fd);
 
@@ -387,8 +387,8 @@ uint8_t WiFiClientSecure::Connected()
 
 void WiFiClientSecure::Stop(void)
 {
-	ESP_ERROR_CHECK(mbedtls_ssl_session_reset(&_ssl));
-	ESP_ERROR_CHECK(mbedtls_ssl_close_notify(&_ssl));
+	mbedtls_ssl_session_reset(&_ssl);
+	mbedtls_ssl_close_notify(&_ssl);
 
 	mbedtls_net_free(&_server_fd);
 	mbedtls_ssl_free(&_ssl);
@@ -451,22 +451,22 @@ void WiFiClientSecure::DebugPrint(void *ctx, int level, const char *file, int li
 
 	switch (level)
 	{
-		case 1:
-			ESP_LOGW(wcs, "%s:%d %s", file, line, str);
-			break;
-		case 2:
-			ESP_LOGI(wcs, "%s:%d %s", file, line, str);
-			break;
-		case 3:
-			ESP_LOGD(wcs, "%s:%d %s", file, line, str);
-			break;
-		case 4:
-			ESP_LOGV(wcs, "%s:%d %s", file, line, str);
-			break;
+	case 1:
+		ESP_LOGW(wcs, "%s:%d %s", file, line, str);
+		break;
+	case 2:
+		ESP_LOGI(wcs, "%s:%d %s", file, line, str);
+		break;
+	case 3:
+		ESP_LOGD(wcs, "%s:%d %s", file, line, str);
+		break;
+	case 4:
+		ESP_LOGV(wcs, "%s:%d %s", file, line, str);
+		break;
 
-		default:
-			ESP_LOGE(wcs, "Unexpected log level %d: %s", level, str);
-			break;
+	default:
+		ESP_LOGE(wcs, "Unexpected log level %d: %s", level, str);
+		break;
 	}
 }
 
