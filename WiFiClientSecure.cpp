@@ -22,6 +22,9 @@ extern "C" {
 
 static const char *wcs = "WiFiClientSecure";
 
+extern const uint8_t azure_root_cert_pem_start[] asm("_binary_azure_root_cert_pem_start");
+extern const uint8_t azure_root_cert_pem_end[] asm("_binary_azure_root_cert_pem_end");
+
 uint8_t WiFiClientSecure::idCount = 0;
 
 WiFiClientSecure::WiFiClientSecure()
@@ -111,10 +114,12 @@ int WiFiClientSecure::ConnectTo(const char *name, uint16_t port)
 		int flags;
 
 		ESP_LOGV(TAGID, "mbedtls_ctr_drbg_seed");
-		// ESP_LOGI(TAGID, "ROOTCERT (%d) %s", strlen(ROOTCERT), ROOTCERT);
-		// if ((ret = mbedtls_x509_crt_parse(&_cacert, (const unsigned char
-		// *)ROOTCERT, strlen(ROOTCERT))) == 0)
-		//{
+
+		ret = mbedtls_x509_crt_parse(&_cacert, azure_root_cert_pem_start, azure_root_cert_pem_end - azure_root_cert_pem_start);
+		if (ret < 0)
+		{
+			ESP_LOGE(TAGID, "mbedtls_x509_crt_parse returned -0x%x\n\n", -ret);
+		}
 
 		ESP_LOGI(TAGID, "Setting hostname for TLS session: %s", name);
 		/* Hostname set here should match CN in server certificate */
@@ -131,7 +136,7 @@ int WiFiClientSecure::ConnectTo(const char *name, uint16_t port)
 				// connect.
 				// You should consider using MBEDTLS_SSL_VERIFY_REQUIRED in your
 				// own code.
-				mbedtls_ssl_conf_authmode(&_config, MBEDTLS_SSL_VERIFY_OPTIONAL);
+				mbedtls_ssl_conf_authmode(&_config, MBEDTLS_SSL_VERIFY_REQUIRED);
 				mbedtls_ssl_conf_ca_chain(&_config, &_cacert, NULL);
 				mbedtls_ssl_conf_rng(&_config, mbedtls_ctr_drbg_random, &_ctr_drbg);
 				if (readTimeout > 0)
@@ -157,14 +162,14 @@ int WiFiClientSecure::ConnectTo(const char *name, uint16_t port)
 							ESP_LOGI(TAGID, "Verifying peer X.509 certificate...");
 							if ((flags = mbedtls_ssl_get_verify_result(&_ssl)) != 0)
 							{
+								char info[512];
 								// In real life, we probably want to close connection if ret != 0
 								ESP_LOGW(TAGID, "Failed to verify peer certificate");
-								//								bzero(info,
-								// sizeof(info));
-								//								mbedtls_x509_crt_verify_info(info,
-								// sizeof(info), "", flags);
-								//								ESP_LOGW(TAGID,
-								//"%s", info);
+								bzero(info, sizeof(info));
+								mbedtls_x509_crt_verify_info(info, sizeof(info), "  ! ", flags);
+								ESP_LOGW(TAGID, "%s", info);
+								mbedtls_x509_crt_verify_info(info, sizeof(info), "", flags);
+								ESP_LOGW(TAGID, "%s", info);
 							}
 							else
 								ESP_LOGI(TAGID, "Certificate verified");
@@ -203,6 +208,12 @@ int WiFiClientSecure::ConnectTo(ip4_addr *ip, uint16_t port)
 		int flags;
 
 		ESP_LOGV(TAGID, "mbedtls_ctr_drbg_seed");
+
+		ret = mbedtls_x509_crt_parse(&_cacert, azure_root_cert_pem_start, azure_root_cert_pem_end - azure_root_cert_pem_start);
+		if (ret < 0)
+		{
+			ESP_LOGE(TAGID, "mbedtls_x509_crt_parse returned -0x%x\n\n", -ret);
+		}
 
 		ESP_LOGI(TAGID, "Setting hostname for TLS session: %s", hostName);
 		/* Hostname set here should match CN in server certificate */
@@ -245,15 +256,14 @@ int WiFiClientSecure::ConnectTo(ip4_addr *ip, uint16_t port)
 							ESP_LOGI(TAGID, "Verifying peer X.509 certificate...");
 							if ((flags = mbedtls_ssl_get_verify_result(&_ssl)) != 0)
 							{
-								// In real life, we probably want to close connection if ret !=
-								// 0
+								char info[512];
+								// In real life, we probably want to close connection if ret != 0
 								ESP_LOGW(TAGID, "Failed to verify peer certificate");
-								//								bzero(info,
-								// sizeof(info));
-								//								mbedtls_x509_crt_verify_info(info,
-								// sizeof(info), "", flags);
-								//								ESP_LOGW(TAGID,
-								//"%s", info);
+								bzero(info, sizeof(info));
+								mbedtls_x509_crt_verify_info(info, sizeof(info), "  ! ", flags);
+								ESP_LOGW(TAGID, "%s", info);
+								mbedtls_x509_crt_verify_info(info, sizeof(info), "", flags);
+								ESP_LOGW(TAGID, "%s", info);
 							}
 							else
 								ESP_LOGI(TAGID, "Certificate verified");
