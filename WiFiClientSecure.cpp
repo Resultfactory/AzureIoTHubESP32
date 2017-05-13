@@ -397,16 +397,19 @@ uint8_t WiFiClientSecure::Connected()
 
 void WiFiClientSecure::Stop(void)
 {
-	mbedtls_ssl_session_reset(&_ssl);
-	mbedtls_ssl_close_notify(&_ssl);
+	if (_server_fd.fd != -1)
+	{
+		mbedtls_ssl_session_reset(&_ssl);
+		mbedtls_ssl_close_notify(&_ssl);
 
-	mbedtls_net_free(&_server_fd);
-	mbedtls_ssl_free(&_ssl);
-	mbedtls_ssl_config_free(&_config);
-	mbedtls_ctr_drbg_free(&_ctr_drbg);
-	mbedtls_entropy_free(&_entropy);
-	// ?????
-	Init();
+		mbedtls_net_free(&_server_fd);
+		mbedtls_ssl_free(&_ssl);
+		mbedtls_ssl_config_free(&_config);
+		mbedtls_ctr_drbg_free(&_ctr_drbg);
+		mbedtls_entropy_free(&_entropy);
+
+		Init();
+	}
 }
 
 size_t WiFiClientSecure::SSLWrite(const uint8_t *buf, size_t size)
